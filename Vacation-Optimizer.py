@@ -1,48 +1,76 @@
-import holidays
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
-def extended_vacation_optimization(country_code, year):
-    public_holidays = holidays.CountryHoliday(country_code, years=year)
+def scrape_holidays(country_url):
+    page = requests.get(country_url)
+    soup = BeautifulSoup(page.content, 'html.parser')
+
+    holidays_table = soup.find("table", {"id": "holidays-table"})
+    if not holidays_table:
+        return {}
+
+    holidays = {}
+    for row in holidays_table.find_all("tr"):
+        date_cell = row.find("th", {"class": "nw"})
+        cells = row.find_all("td")
+        
+        if date_cell and len(cells) >= 2:
+            raw_date = date_cell.text + " 2024"
+            date = datetime.strptime(raw_date, '%b %d %Y').date()
+            name = cells[1].text.strip()
+            holiday_type = cells[2].text.strip() if len(cells) > 2 else "Unknown"
+            holidays[date] = {'name': name, 'type': holiday_type}
+
+    return holidays
+
+def extended_vacation_optimization(country_url, year):
+    public_holidays = scrape_holidays(country_url)
     extended_breaks = []
 
-    # Sort holidays and extend them to the nearest weekends
-    for holiday in sorted(public_holidays):
-        start = holiday
-        end = holiday
+    for holiday_date in sorted(public_holidays):
+        start = holiday_date
+        end = holiday_date
+        included_holidays = [public_holidays[holiday_date]['name']]
 
-        # Extend backwards and forwards to include weekends and adjacent holidays
         while start.weekday() > 4 or (start - timedelta(days=1)) in public_holidays:
             start -= timedelta(days=1)
+            if (start in public_holidays) and (public_holidays[start]['name'] not in included_holidays):
+                included_holidays.append(public_holidays[start]['name'])
         start -= timedelta(days=start.weekday() + 1)
 
         while end.weekday() < 5 or (end + timedelta(days=1)) in public_holidays:
             end += timedelta(days=1)
+            if (end in public_holidays) and (public_holidays[end]['name'] not in included_holidays):
+                included_holidays.append(public_holidays[end]['name'])
         end += timedelta(days=6 - end.weekday())
 
-        # Check for overlapping or adjacent breaks
         if extended_breaks and extended_breaks[-1][1] + timedelta(days=4) >= start:
-            extended_breaks[-1] = (extended_breaks[-1][0], end)
+            extended_breaks[-1] = (extended_breaks[-1][0], end, extended_breaks[-1][2] + included_holidays)
         else:
-            extended_breaks.append((start, end))
+            extended_breaks.append((start, end, included_holidays))
 
-    # Calculate vacation days for each extended break
-    vacation_plans = []
-    for start, end in extended_breaks:
+    vacation_plans = [["Start Date", "End Date", "Vacation Days Used", "Total Days", "Included Holidays"]]
+    for start, end, holidays_in_period in extended_breaks:
         total_days = (end - start).days + 1
         vacation_days = sum(1 for d in range(total_days)
                             if (start + timedelta(days=d)).weekday() < 5 and 
                             (start + timedelta(days=d)) not in public_holidays)
-
-        vacation_period = f"{start.strftime('%B %d')} (evening) - {end.strftime('%B %d')} ({vacation_days} vacation days used for {total_days} day holiday)"
-        vacation_plans.append(vacation_period)
+        holidays_str = ", ".join(holidays_in_period)
+        vacation_plans.append([start.strftime('%B %d'), end.strftime('%B %d'), vacation_days, total_days, holidays_str])
 
     return vacation_plans
 
-# Example usage
-country_code = 'CZ'  # Country code
-year = 2024          # Year
+def print_markdown_table(data):
+    separator = "|"
+    headers = data[0]
+    header_line = separator.join(headers)
+    separator_line = separator.join(["---"] * len(headers))
+    print(header_line)
+    print(separator_line)
+    for row in data[1:]:
+        print(separator.join(map(str, row)))
 
-# Find optimized extended vacations
-optimized_extended_vacations = extended_vacation_optimization(country_code, year)
-
-optimized_extended_vacations
+country_url = 'https://www.timeanddate.com/holidays/czech/'
+optimized_extended_vacations = extended_vacation_optimization(country_url, 2024)
+print_markdown_table(optimized_extended_vacations)
