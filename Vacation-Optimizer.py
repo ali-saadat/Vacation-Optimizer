@@ -16,16 +16,19 @@ def scrape_holidays(country_url):
         cells = row.find_all("td")
         
         if date_cell and len(cells) >= 2:
-            raw_date = date_cell.text + " 2024"
+            raw_date = date_cell.text + " 2024"  # Adjust the year as needed
             date = datetime.strptime(raw_date, '%b %d %Y').date()
             name = cells[1].text.strip()
             holiday_type = cells[2].text.strip() if len(cells) > 2 else "Unknown"
-            holidays[date] = {'name': name, 'type': holiday_type}
+
+            if holiday_type == "National holiday":  # Filter for only National holidays
+                holidays[date] = {'name': name, 'type': holiday_type}
 
     return holidays
 
 def extended_vacation_optimization(country_url, year):
     public_holidays = scrape_holidays(country_url)
+    print(public_holidays)
     extended_breaks = []
 
     for holiday_date in sorted(public_holidays):
